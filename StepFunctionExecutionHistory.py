@@ -2,7 +2,6 @@ import boto3
 import json
 import datetime
 import os
-import time
 
 g_export_file = os.path.join(os.getcwd(), 'results.json')
 g_timeformat = '%d %b %Y %H:%M:%S'
