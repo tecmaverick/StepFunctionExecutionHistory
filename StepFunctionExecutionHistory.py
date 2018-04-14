@@ -2,35 +2,38 @@ import boto3
 import json
 import datetime
 import os
+import time
 
 g_export_file = os.path.join(os.getcwd(), 'results.json')
 g_timeformat = '%d %b %Y %H:%M:%S'
 
+
 # ----------------------------------------------------------------------------------------------------------------------
 def valid_datetime_filter(start_datetime, end_datetime):
     return isinstance(start_datetime, datetime.datetime) and \
-            isinstance(end_datetime, datetime.datetime) and \
-            start_datetime <= end_datetime
+           isinstance(end_datetime, datetime.datetime) and \
+           start_datetime <= end_datetime
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 def myconverter(o):
     if isinstance(o, datetime.datetime):
         return o.__str__()
 
+
 # ----------------------------------------------------------------------------------------------------------------------
 def getStepFunctionLogs():
-    nextTokenVal = None
+    next_token_val = None
     results = []
-    exit_loop = False
 
     sf_client = boto3.client('stepfunctions')
 
     while True:
-        if nextTokenVal != None:
+        if next_token_val != None:
             response = sf_client.list_executions(
                 stateMachineArn=stateMachineArn,
                 maxResults=1000,
-                nextToken=nextTokenVal)
+                nextToken=next_token_val)
         else:
             response = sf_client.list_executions(
                 stateMachineArn=stateMachineArn,
@@ -38,37 +41,36 @@ def getStepFunctionLogs():
 
         for execution in response["executions"]:
 
-            #get the datetime from execution["stopDate"] which is in the format "2018-02-14 14:07:27.777000+11:00"
-            #strip the micro seconds and timezone
-            step_exec_date = str(execution["stopDate"]).split(".")[0]
-            exec_stop_datetime = datetime.datetime.strptime(step_exec_date, '%Y-%m-%d %H:%M:%S')
+            start_dt = execution["startDate"]
+            stop_dt = execution["stopDate"]
 
-            if exec_stop_datetime >= filter_start_datetime and \
-                            exec_stop_datetime <= filter_end_datetime:
+            start_dt = datetime.datetime(year=start_dt.year, month=start_dt.month, day=start_dt.day,
+                                         hour=start_dt.hour, minute=start_dt.minute, second=start_dt.second)
+
+            stop_dt = datetime.datetime(year=stop_dt.year, month=stop_dt.month, day=stop_dt.day,
+                                        hour=stop_dt.hour, minute=stop_dt.minute, second=stop_dt.second)
+
+            # if execution start or stop datetime is within the filter range then get_exec_history and add to log
+            if (filter_start_datetime <= start_dt <= filter_end_datetime) \
+                    or \
+                    (filter_start_datetime <= stop_dt <= filter_end_datetime):
                 exec_response = sf_client.get_execution_history(executionArn=execution["executionArn"])
                 execution["events"] = exec_response["events"]
                 results.append(execution)
 
-            elif exec_stop_datetime >= filter_end_datetime:
-                exit_loop = True
-                break
-
-            else:
-                pass
-
-        if exit_loop:
-            break
-
         if "nextToken" in response:
-            nextTokenVal = response["nextToken"]
+            next_token_val = response["nextToken"]
         else:
             break
 
+        break
+
     return results
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 def write_logs(data, file_name):
-    with open(file_name,"wt") as f:
+    with open(file_name, "wt") as f:
         f.write(data)
 
 
@@ -79,20 +81,20 @@ if __name__ == "__main__":
     # ***************************************************************************************************
     stateMachineArn = 'arn:aws:states:ap-southeast-2:1234567890:stateMachine:LambdaStateMachine'
 
-    filter_start_datetime = datetime.datetime(year=2018, month=3, day=5, hour=0, minute=0, second=0)
-    filter_end_datetime = datetime.datetime(year=2018, month=3, day=5, hour=23, minute=59, second=59)
+    filter_start_datetime = datetime.datetime(year=2018, month=4, day=13, hour=0, minute=0, second=0)
+    filter_end_datetime = datetime.datetime(year=2018, month=4, day=13, hour=23, minute=59, second=59)
 
     # ***************************************************************************************************
 
-    if not valid_datetime_filter(filter_start_datetime,filter_end_datetime):
+    if not valid_datetime_filter(filter_start_datetime, filter_end_datetime):
         print("Start datetime must be lesser or qual than End datetime")
     else:
         print("Exporting logs between '{}' and '{}'".format(
-                filter_start_datetime.strftime(g_timeformat),
-                filter_end_datetime.strftime(g_timeformat)))
+            filter_start_datetime.strftime(g_timeformat),
+            filter_end_datetime.strftime(g_timeformat)))
 
         logs = getStepFunctionLogs()
-        print("logs entries: {}".format(len(logs)))
+        print("log entries: {}".format(len(logs)))
 
         print("Formatting JSON")
         data = json.dumps(logs, default=myconverter, indent=4)
